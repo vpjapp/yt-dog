@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useStore, WatchedStatus } from "@/store/useStore";
 import { formatDistanceToNow } from "date-fns";
 import Image from "next/image";
@@ -21,6 +21,7 @@ export default function VideoCard({ channelId, videoId }: { channelId: string; v
   if (!video) return null;
 
   const onMark = (status: WatchedStatus) => markStatus(channelId, videoId, status);
+  const handleEnded = useCallback(() => onMark("watched"), [channelId, videoId]);
 
   return (
     <div className="rounded border p-2">
@@ -50,7 +51,7 @@ export default function VideoCard({ channelId, videoId }: { channelId: string; v
       </div>
       {open && (
         <div className="mt-3">
-          <YouTubeEmbed videoId={video.id} onEnded={() => onMark("watched")} />
+          <YouTubeEmbed videoId={video.id} onEnded={handleEnded} />
         </div>
       )}
     </div>

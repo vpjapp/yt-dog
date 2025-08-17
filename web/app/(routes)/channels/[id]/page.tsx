@@ -1,9 +1,8 @@
 "use client";
-import VideoCard from "@/components/VideoCard";
-import { useStore } from "@/store/useStore";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
+import { useStore, selectUnwatched } from "@/store/useStore";
+import VideoCard from "@/components/VideoCard";
 
 export default function ChannelDetail() {
   const params = useParams();
@@ -13,17 +12,9 @@ export default function ChannelDetail() {
   const isFetching = useStore((s) => s.isFetching);
   const setIsFetching = useStore((s) => s.setIsFetching);
 
-  // Stable selector using useShallow (zustand v5)
-  const list = useStore(useShallow((s) => s.videosByChannel[id] || []));
-
-  // Derive visible items outside of useStore
-  const visible = useMemo(() => {
-    const unwatched = list.filter((v) => v.status !== "watched");
-    const sorted = [...unwatched].sort((a, b) =>
-      b.publishedAt.localeCompare(a.publishedAt)
-    );
-    return sorted.slice(0, 10 * (page + 1));
-  }, [list, page]);
+  const visible = useStore(
+    useMemo(() => selectUnwatched(id, 10 * (page + 1)), [id, page])
+  );
 
   useEffect(() => {
     const run = async () => {

@@ -20,8 +20,6 @@ export default function YouTubeEmbed({
   onEnded?: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const onEndedRef = useRef<undefined | (() => void)>(undefined);
-  onEndedRef.current = onEnded;
 
   useEffect(() => {
     if (!ref.current) return;
@@ -36,7 +34,7 @@ export default function YouTubeEmbed({
 
     const onStateChange = (e: { data: number }) => {
       // 0 = ended
-      if (e.data === 0) onEndedRef.current?.();
+      if (e.data === 0) onEnded?.();
     };
     player.on("stateChange", onStateChange);
 
@@ -72,9 +70,9 @@ export default function YouTubeEmbed({
         "webkitfullscreenchange",
         onFsChange as EventListener
       );
-      // player.destroy();
+      player.destroy();
     };
-  }, [videoId]);
+  }, [videoId, onEnded]);
 
   return <div className="aspect-video w-full" ref={ref} />;
 }
