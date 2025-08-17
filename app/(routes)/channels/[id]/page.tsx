@@ -26,21 +26,41 @@ export default function ChannelDetail() {
   }, [list, page]);
 
   useEffect(() => {
+    let cancelled = false;
     const run = async () => {
       setIsFetching(true);
       try {
-        const res = await fetch(
+        // First page
+        let res = await fetch(
           `/api/youtube/videos?id=${encodeURIComponent(id)}`
         );
-        if (res.ok) {
-          const batch = await res.json();
+        if (!res.ok) return;
+        let batch = await res.json();
+        if (cancelled) return;
+        setVideos(id, batch.videos || []);
+
+        // Background paginate
+        let next: string | undefined = batch.nextPageToken;
+        while (next && !cancelled) {
+          res = await fetch(
+            `/api/youtube/videos?id=${encodeURIComponent(
+              id
+            )}&pageToken=${encodeURIComponent(next)}`
+          );
+          if (!res.ok) break;
+          batch = await res.json();
+          if (cancelled) return;
           setVideos(id, batch.videos || []);
+          next = batch.nextPageToken;
         }
       } finally {
-        setIsFetching(false);
+        if (!cancelled) setIsFetching(false);
       }
     };
     run();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 

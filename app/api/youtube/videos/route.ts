@@ -3,7 +3,11 @@ import { fetchChannelVideos } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
   const apiKey = process.env.YT_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "Server missing YT_API_KEY" }, { status: 500 });
+  if (!apiKey)
+    return NextResponse.json(
+      { error: "Server missing YT_API_KEY" },
+      { status: 500 }
+    );
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });

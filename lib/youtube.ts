@@ -22,10 +22,17 @@ export const ChannelSchema = z.object({
 export type Channel = z.infer<typeof ChannelSchema>;
 
 // Helpers for parsing channel URL to channel handle or id
-export function parseChannelUrl(input: string): { type: "handle" | "id" | "custom" | "unknown"; value: string } {
+export function parseChannelUrl(input: string): {
+  type: "handle" | "id" | "custom" | "unknown";
+  value: string;
+} {
   try {
     const u = new URL(input);
-    if (u.hostname !== "www.youtube.com" && u.hostname !== "youtube.com" && u.hostname !== "m.youtube.com") {
+    if (
+      u.hostname !== "www.youtube.com" &&
+      u.hostname !== "youtube.com" &&
+      u.hostname !== "m.youtube.com"
+    ) {
       return { type: "unknown", value: input };
     }
     const parts = u.pathname.split("/").filter(Boolean);
@@ -52,7 +59,10 @@ export function parseChannelUrl(input: string): { type: "handle" | "id" | "custo
 // Requires YT_API_KEY on server
 const API_BASE = "https://www.googleapis.com/youtube/v3";
 
-export async function fetchChannelIdByHandle(handleOrCustom: string, apiKey: string): Promise<string | null> {
+export async function fetchChannelIdByHandle(
+  handleOrCustom: string,
+  apiKey: string
+): Promise<string | null> {
   // handle may be like "@handle" or custom name, use search with type=channel
   const q = handleOrCustom.startsWith("@") ? handleOrCustom : handleOrCustom;
   const url = new URL(`${API_BASE}/search`);
@@ -79,7 +89,11 @@ export async function fetchChannelMeta(channelId: string, apiKey: string) {
   const resp = await fetch(url.toString());
   if (!resp.ok) return null;
   const data = (await resp.json()) as {
-    items?: Array<{ id: string; snippet?: { title?: string }; statistics?: { videoCount?: string } }>;
+    items?: Array<{
+      id: string;
+      snippet?: { title?: string };
+      statistics?: { videoCount?: string };
+    }>;
   };
   const c = data.items?.[0];
   if (!c) return null;
@@ -112,7 +126,10 @@ function parseIso8601DurationToSeconds(iso: string): number {
   return h * 3600 + min * 60 + s;
 }
 
-async function fetchDurations(ids: string[], apiKey: string): Promise<Record<string, number>> {
+async function fetchDurations(
+  ids: string[],
+  apiKey: string
+): Promise<Record<string, number>> {
   if (ids.length === 0) return {};
   const url = new URL(`${API_BASE}/videos`);
   url.searchParams.set("part", "contentDetails");
@@ -125,34 +142,88 @@ async function fetchDurations(ids: string[], apiKey: string): Promise<Record<str
   };
   const map: Record<string, number> = {};
   for (const it of data.items || []) {
-    const sec = it.contentDetails?.duration ? parseIso8601DurationToSeconds(it.contentDetails.duration) : 0;
+    const sec = it.contentDetails?.duration
+      ? parseIso8601DurationToSeconds(it.contentDetails.duration)
+      : 0;
     map[it.id] = sec;
   }
   return map;
 }
 
-export async function fetchChannelVideos(channelId: string, apiKey: string, pageToken?: string) {
-  const url = new URL(`${API_BASE}/search`);
-  url.searchParams.set("part", "snippet");
-  url.searchParams.set("channelId", channelId);
+async function getUploadsPlaylistId(
+  channelId: string,
+  apiKey: string
+): Promise<string | null> {
+  const url = new URL(`${API_BASE}/channels`);
+  url.searchParams.set("part", "contentDetails");
+  url.searchParams.set("id", channelId);
+  url.searchParams.set("key", apiKey);
+  const resp = await fetch(url.toString());
+  if (!resp.ok) return null;
+  const data = (await resp.json()) as {
+    items?: Array<{
+      contentDetails?: { relatedPlaylists?: { uploads?: string } };
+    }>;
+  };
+  const uploads =
+    data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads || null;
+  return uploads;
+}
+
+export async function fetchChannelVideos(
+  channelId: string,
+  apiKey: string,
+  pageToken?: string
+) {
+  // Use uploads playlist for reliable full history
+  const uploadsId = await getUploadsPlaylistId(channelId, apiKey);
+  if (!uploadsId) throw new Error("Uploads playlist not found");
+
+  const url = new URL(`${API_BASE}/playlistItems`);
+  url.searchParams.set("part", "snippet,contentDetails");
+  url.searchParams.set("playlistId", uploadsId);
   url.searchParams.set("maxResults", "50");
-  url.searchParams.set("order", "date");
   if (pageToken) url.searchParams.set("pageToken", pageToken);
-  url.searchParams.set("type", "video");
   url.searchParams.set("key", apiKey);
 
   const resp = await fetch(url.toString());
-  if (!resp.ok) throw new Error("Failed to fetch videos");
-  const data = (await resp.json()) as { items?: SearchVideoItem[]; nextPageToken?: string };
-  const raw = (data.items || []).map((it) => ({
-    id: it.id?.videoId || "",
-    title: it.snippet?.title || "",
-    description: it.snippet?.description,
-    publishedAt: it.snippet?.publishedAt || new Date(0).toISOString(),
-    thumbnail: it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || "https://i.ytimg.com/img/no_thumbnail.jpg",
-    channelId: it.snippet?.channelId || channelId,
-    channelTitle: it.snippet?.channelTitle || "",
-  }));
+  if (!resp.ok) throw new Error("Failed to fetch uploads");
+  const data = (await resp.json()) as {
+    items?: Array<{
+      snippet?: {
+        title?: string;
+        description?: string;
+        publishedAt?: string;
+        thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
+        channelId?: string;
+        channelTitle?: string;
+        resourceId?: { videoId?: string };
+      };
+      contentDetails?: { videoId?: string; videoPublishedAt?: string };
+    }>;
+    nextPageToken?: string;
+  };
+
+  const raw = (data.items || []).map((it) => {
+    const vid =
+      it.contentDetails?.videoId || it.snippet?.resourceId?.videoId || "";
+    return {
+      id: vid,
+      title: it.snippet?.title || "",
+      description: it.snippet?.description,
+      publishedAt:
+        it.contentDetails?.videoPublishedAt ||
+        it.snippet?.publishedAt ||
+        new Date(0).toISOString(),
+      thumbnail:
+        it.snippet?.thumbnails?.medium?.url ||
+        it.snippet?.thumbnails?.default?.url ||
+        "https://i.ytimg.com/img/no_thumbnail.jpg",
+      channelId: it.snippet?.channelId || channelId,
+      channelTitle: it.snippet?.channelTitle || "",
+    } satisfies Omit<YoutubeVideo, "duration">;
+  });
+
   const ids = raw.map((r) => r.id).filter(Boolean);
   const durationMap = await fetchDurations(ids, apiKey);
   const items = raw.map((r) => ({ ...r, duration: durationMap[r.id] }));
