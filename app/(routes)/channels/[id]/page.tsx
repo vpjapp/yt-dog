@@ -9,6 +9,7 @@ export default function ChannelDetail() {
   const params = useParams();
   const id = params?.id as string;
   const [page, setPage] = useState(0);
+  const [nextToken, setNextToken] = useState<string | null>(null);
   const setVideos = useStore((s) => s.setVideos);
   const isFetching = useStore((s) => s.isFetching);
   const setIsFetching = useStore((s) => s.setIsFetching);
@@ -30,29 +31,14 @@ export default function ChannelDetail() {
     const run = async () => {
       setIsFetching(true);
       try {
-        // First page
-        let res = await fetch(
+        const res = await fetch(
           `/api/youtube/videos?id=${encodeURIComponent(id)}`
         );
         if (!res.ok) return;
-        let batch = await res.json();
+        const batch = await res.json();
         if (cancelled) return;
         setVideos(id, batch.videos || []);
-
-        // Background paginate
-        let next: string | undefined = batch.nextPageToken;
-        while (next && !cancelled) {
-          res = await fetch(
-            `/api/youtube/videos?id=${encodeURIComponent(
-              id
-            )}&pageToken=${encodeURIComponent(next)}`
-          );
-          if (!res.ok) break;
-          batch = await res.json();
-          if (cancelled) return;
-          setVideos(id, batch.videos || []);
-          next = batch.nextPageToken;
-        }
+        setNextToken(batch.nextPageToken ?? null);
       } finally {
         if (!cancelled) setIsFetching(false);
       }
@@ -63,6 +49,37 @@ export default function ChannelDetail() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // When there are fewer than 10 unwatched videos and we have more pages,
+  // fetch the next page in the background.
+  useEffect(() => {
+    if (!nextToken) return;
+    const unwatchedCount = list.filter((v) => v.status !== "watched").length;
+    if (unwatchedCount >= 10) return;
+
+    let cancelled = false;
+    const run = async () => {
+      setIsFetching(true);
+      try {
+        const res = await fetch(
+          `/api/youtube/videos?id=${encodeURIComponent(
+            id
+          )}&pageToken=${encodeURIComponent(nextToken)}`
+        );
+        if (!res.ok) return;
+        const batch = await res.json();
+        if (cancelled) return;
+        setVideos(id, batch.videos || []);
+        setNextToken(batch.nextPageToken ?? null);
+      } finally {
+        if (!cancelled) setIsFetching(false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, list, nextToken, setIsFetching, setVideos]);
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-4">
