@@ -20,7 +20,12 @@ interface StoreState {
 
   addChannel: (inputUrl: string, resolved: ChannelState) => void;
   setVideos: (channelId: string, videos: YoutubeVideo[]) => void;
-  markStatus: (channelId: string, videoId: string, status: WatchedStatus) => void;
+  markStatus: (
+    channelId: string,
+    videoId: string,
+    status: WatchedStatus
+  ) => void;
+  removeChannel: (channelId: string) => void;
   setIsFetching: (v: boolean) => void;
 }
 
@@ -58,7 +63,10 @@ export const useStore = create<StoreState>()(
           }
           return {
             ...s,
-            videosByChannel: { ...s.videosByChannel, [channelId]: Array.from(map.values()) },
+            videosByChannel: {
+              ...s.videosByChannel,
+              [channelId]: Array.from(map.values()),
+            },
           };
         }),
 
@@ -69,8 +77,21 @@ export const useStore = create<StoreState>()(
             ...s,
             videosByChannel: {
               ...s.videosByChannel,
-              [channelId]: list.map((v) => (v.id === videoId ? { ...v, status } : v)),
+              [channelId]: list.map((v) =>
+                v.id === videoId ? { ...v, status } : v
+              ),
             },
+          };
+        }),
+
+      removeChannel: (channelId) =>
+        set((s) => {
+          const { [channelId]: _omit, ...restVideos } = s.videosByChannel;
+          void _omit;
+          return {
+            ...s,
+            channels: s.channels.filter((c) => c.id !== channelId),
+            videosByChannel: restVideos,
           };
         }),
 
@@ -79,7 +100,10 @@ export const useStore = create<StoreState>()(
     {
       name: "yt-dog-store",
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ channels: s.channels, videosByChannel: s.videosByChannel }),
+      partialize: (s) => ({
+        channels: s.channels,
+        videosByChannel: s.videosByChannel,
+      }),
     }
   )
 );
